@@ -1,16 +1,20 @@
 import sys
 import os
-from PyQt5.QtWidgets import (QApplication, QMainWindow, QTabWidget, QWidget, QVBoxLayout, QHBoxLayout, 
-                             QLabel, QComboBox, QPushButton, QTableWidget, QTableWidgetItem, 
-                             QLineEdit, QTextEdit, QGroupBox, QScrollArea, QMessageBox, QSizePolicy)
-from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QFont
-from PyQt5.QtWebEngineWidgets import QWebEngineView
-from PyQt5.QtCore import QUrl
+from datetime import datetime
+import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
+
+from PyQt5.QtCore import Qt, QUrl, QSize
+from PyQt5.QtGui import QFont, QPixmap, QIntValidator
+from PyQt5.QtWidgets import (
+    QApplication, QMainWindow, QTabWidget, QWidget, QVBoxLayout, QHBoxLayout,
+    QLabel, QComboBox, QPushButton, QTableWidget, QTableWidgetItem,
+    QLineEdit, QTextEdit, QGroupBox, QScrollArea, QMessageBox, QSizePolicy, QGridLayout
+)
+from PyQt5.QtWebEngineWidgets import QWebEngineView
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
-import pandas as pd
 
 # Import your calculation modules
 from FCFF import FCFFModel
@@ -22,15 +26,6 @@ class MplCanvas(FigureCanvas):
         fig = Figure(figsize=(width, height), dpi=dpi)
         self.axes = fig.add_subplot(111)
         super(MplCanvas, self).__init__(fig)
-
-
-import os
-import pandas as pd
-from PyQt5.QtWidgets import (QApplication, QMainWindow, QTabWidget, QWidget, QVBoxLayout, QHBoxLayout, 
-                             QLabel, QComboBox, QPushButton, QTableWidget, QTableWidgetItem, 
-                             QLineEdit, QTextEdit, QGroupBox, QScrollArea, QMessageBox)
-from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QFont
 
 class ReverseFCFFTab(QWidget):
     """Tab 1: Reverse FCFF Tool with complete valuation table"""
@@ -444,14 +439,6 @@ class ReverseFCFFTab(QWidget):
             self.table.item(roic_row, 12).setText("{:.2%}".format(roic_df.loc["Terminal ROIC", "Terminal Value"]))
 
             
-import os
-from datetime import datetime
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QLabel, QScrollArea, QGridLayout
-from PyQt5.QtGui import QFont
-from PyQt5.QtCore import Qt
-from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
-import matplotlib.pyplot as plt
-
 class MplCanvas(FigureCanvas):
     """Matplotlib canvas for embedding plots"""
     def __init__(self, parent=None, width=5, height=4, dpi=100):
@@ -593,14 +580,6 @@ class HistoricalDataTab(QWidget):
         # Redraw the canvas
         canvas.draw()
 
-from PyQt5.QtWebEngineWidgets import QWebEngineView
-from PyQt5.QtCore import QUrl
-
-from PyQt5.QtWebEngineWidgets import QWebEngineView
-from PyQt5.QtCore import QUrl, QSize
-from PyQt5.QtWidgets import QSizePolicy
-import os
-
 class RevenueBySegmentTab(QWidget):
     """Tab 3: Responsive Revenue by Segment with embedded Sankey diagrams"""
     def __init__(self, parent=None):
@@ -705,11 +684,6 @@ class RevenueBySegmentTab(QWidget):
                     </body>
                 </html>
             """)
-
-
-from PyQt5.QtGui import QPixmap, QIntValidator
-from PyQt5.QtWidgets import QScrollArea, QGridLayout
-import os
 
 class MonteCarloTab(QWidget):
     """Tab 4: Monte Carlo Simulation with image-based results"""
@@ -843,8 +817,6 @@ class MonteCarloTab(QWidget):
         if os.path.exists(table_path):
             self.display_plot_image(table_path, self.table_image_label)
 
-
-import numpy as np
 class StoryTab(QWidget):
     """Tab 5: Story Behind the Numbers with 2x2 grid layout"""
     def __init__(self, parent=None):
@@ -1041,7 +1013,6 @@ class StoryTab(QWidget):
                     img_path = os.path.join(self.plot_dir, f"{block_info['title'].lower().replace(' ', '_')}.png")
                     if os.path.exists(img_path):
                         self.display_plot_image(img_path, plot_label)
-
 
 class StockValuationDashboard(QMainWindow):
     """Main application window"""
