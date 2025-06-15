@@ -1,3 +1,4 @@
+# from curses import COLORS
 import sys
 import os
 from datetime import datetime
@@ -5,12 +6,23 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
+# Define color palette for consistent styling
+COLORS = {
+    'primary': '#2077b4',
+    'secondary': '#2bdab3',
+    'danger': '#e27373',
+    'warning': '#f7b731',
+    'success': '#27ae60',
+    'info': '#2980b9',
+    'background': '#f8f9fa'
+}
+
 from PyQt5.QtCore import Qt, QUrl, QSize
-from PyQt5.QtGui import QFont, QPixmap, QIntValidator, QColor
+from PyQt5.QtGui import QFont, QPixmap, QIntValidator, QColor, QIcon
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QTabWidget, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QComboBox, QPushButton, QTableWidget, QTableWidgetItem,
-    QLineEdit, QTextEdit, QGroupBox, QScrollArea, QMessageBox, QSizePolicy, QGridLayout
+    QLineEdit, QTextEdit, QGroupBox, QScrollArea, QMessageBox, QSizePolicy, QGridLayout, QFrame
 )
 from PyQt5.QtWebEngineWidgets import QWebEngineView
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
@@ -492,138 +504,336 @@ class MplCanvas(FigureCanvas):
         self.setParent(parent)
 
 class HistoricalDataTab(QWidget):
-    """Tab 2: Historical Data"""
+    """Modernized Historical Data Tab with proper plot updates"""
     def __init__(self, parent=None):
         super(HistoricalDataTab, self).__init__(parent)
         self.parent = parent
-        self.layout = QVBoxLayout()
+        self.layout = QVBoxLayout(self)
+        self.layout.setContentsMargins(12, 12, 12, 12)
+        self.layout.setSpacing(12)
         
-        # Header that will update based on selected stock
+        # Modern header with company name
         self.header = QLabel("Historical Financial Overview")
-        self.header.setFont(QFont('Arial', 14, QFont.Bold))
+        self.header.setFont(QFont('Segoe UI', 14, QFont.Bold))
         self.header.setAlignment(Qt.AlignCenter)
+        self.header.setStyleSheet(f"""
+            color: {COLORS['primary']};
+            padding: 12px;
+            background-color: white;
+            border-radius: 8px;
+            border: 1px solid #e0e0e0;
+            margin-bottom: 8px;
+        """)
         self.layout.addWidget(self.header)
         
-        # Create a scroll area for the grid of plots
+        # Create scroll area for plots
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
+        scroll.setStyleSheet("""
+            QScrollArea {
+                border: none;
+                background: transparent;
+            }
+            QScrollBar:vertical {
+                border: none;
+                background: #f8f9fa;
+                width: 10px;
+                margin: 0px;
+            }
+            QScrollBar::handle:vertical {
+                background: #d1d5db;
+                min-height: 20px;
+                border-radius: 4px;
+            }
+        """)
+        
+        # Content widget for scroll area
         self.scroll_content = QWidget()
         self.grid_layout = QGridLayout(self.scroll_content)
+        self.grid_layout.setSpacing(16)
+        self.grid_layout.setContentsMargins(8, 8, 8, 8)
         
         scroll.setWidget(self.scroll_content)
         self.layout.addWidget(scroll)
-        self.setLayout(self.layout)
         
-        # Create a folder for saving plots
+        # Create directory for saving plots
         self.plots_dir = "saved_plots"
         os.makedirs(self.plots_dir, exist_ok=True)
         
-        # Store current company to detect changes
+        # Store current company and data
         self.current_company = None
+        self.current_fcff = None
+        
+        # Refresh button
+        self.refresh_btn = QPushButton("Refresh Charts")
+        self.refresh_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {COLORS['primary']};
+                color: white;
+                border: none;
+                padding: 8px 16px;
+                border-radius: 6px;
+                min-height: 36px;
+                font-weight: 500;
+            }}
+            QPushButton:hover {{
+                background-color: {COLORS['secondary']};
+            }}
+        """)
+        self.refresh_btn.setIcon(QIcon.fromTheme("view-refresh"))
+        self.refresh_btn.clicked.connect(self._force_refresh)
+        
+        btn_container = QWidget()
+        btn_layout = QHBoxLayout(btn_container)
+        btn_layout.addStretch()
+        btn_layout.addWidget(self.refresh_btn)
+        btn_layout.addStretch()
+        self.layout.addWidget(btn_container)
     
     def update_plots(self, fcff):
         """Update the plots with data for the selected stock"""
         try:
-            # Update header
+            self.current_fcff = fcff
             company = "Microsoft" if fcff.stock == "MSFT" else "NVIDIA"
+            
+            # Update header
             self.header.setText(f"Historical Financial Overview - {company}")
             
-            # Clear previous plots from grid
-            self._clear_grid_layout()
-            
-            # Always regenerate plots when company changes
-            if company != self.current_company:
+            # Only regenerate plots if company changed or data is stale
+            if company != self.current_company or not self._plots_exist(company):
                 self.current_company = company
-                plot_files = self._generate_and_save_plots(fcff, company)
-                self._arrange_plots_in_grid(plot_files)
+                self._generate_and_display_plots(fcff, company)
             
         except Exception as e:
             print(f"Error updating plots: {e}")
+            self._show_error_message(str(e))
+    
+    def _force_refresh(self):
+        """Force refresh all plots"""
+        if self.current_fcff and self.current_company:
+            self._generate_and_display_plots(self.current_fcff, self.current_company)
+    
+    def _plots_exist(self, company):
+        """Check if plot files exist for current company"""
+        required_files = [
+            f"{company}_reinvestment.png",
+            f"{company}_revenue.png",
+            f"{company}_ebit.png",
+            f"{company}_invested_capital.png",
+            f"{company}_operating_margin.png",
+            f"{company}_stock_price.png"
+        ]
+        return all(os.path.exists(os.path.join(self.plots_dir, f)) for f in required_files)
+    
+    def _generate_and_display_plots(self, fcff, company):
+        """Generate and display all plots"""
+        try:
+            # Clear previous plots
+            self._clear_grid_layout()
+            
+            # Generate and save plots
+            plot_files = self._generate_and_save_plots(fcff, company)
+            
+            # Arrange in grid with proper sizing
+            self._arrange_plots_in_grid(plot_files)
+            
+        except Exception as e:
+            print(f"Error generating plots: {e}")
+            self._show_error_message(str(e))
     
     def _clear_grid_layout(self):
         """Clear all widgets from the grid layout"""
         for i in reversed(range(self.grid_layout.count())): 
             widget = self.grid_layout.itemAt(i).widget()
             if widget is not None:
-                widget.setParent(None)
+                widget.deleteLater()
     
     def _generate_and_save_plots(self, fcff, company):
-        """Generate all plots and save them to files (always overwrites)"""
+        """Generate all plots and save them to files"""
         plot_files = {}
         
-        # Generate and save each plot (always overwrite)
-        fig, ax = fcff.plot_reinvestment_only()
-        reinvestment_path = self._save_plot(fig, f"{company}_reinvestment.png")
-        plt.close(fig)
-        
-        fig, ax = fcff.plot_revenue_and_growth()
-        revenue_path = self._save_plot(fig, f"{company}_revenue.png")
-        plt.close(fig)
-        
-        fig, ax = fcff.plot_ebit()
-        ebit_path = self._save_plot(fig, f"{company}_ebit.png")
-        plt.close(fig)
-        
-        fig, ax1, ax2 = fcff.plot_invested_capital_and_roic()
-        invested_capital_path = self._save_plot(fig, f"{company}_invested_capital.png")
-        plt.close(fig)
-        
-        fig, ax = fcff.plot_operating_margin()
-        operating_margin_path = self._save_plot(fig, f"{company}_operating_margin.png")
-        plt.close(fig)
-        
-        fig, ax = fcff.plot_stock_price()
-        stock_price_path = self._save_plot(fig, f"{company}_stock_price.png")
-        plt.close(fig)
-        
-        # Return paths to all generated plots
-        return {
-            'reinvestment': reinvestment_path,
-            'revenue': revenue_path,
-            'ebit': ebit_path,
-            'invested_capital': invested_capital_path,
-            'operating_margin': operating_margin_path,
-            'stock_price': stock_price_path
-        }
+        try:
+            # Generate and save each plot with consistent sizing
+            fig, ax = fcff.plot_reinvestment_only()
+            fig.set_size_inches(6, 4)  # Standard size for all plots
+            reinvestment_path = self._save_plot(fig, f"{company}_reinvestment.png")
+            plt.close(fig)
+            
+            fig, ax = fcff.plot_revenue_and_growth()
+            fig.set_size_inches(6, 4)
+            revenue_path = self._save_plot(fig, f"{company}_revenue.png")
+            plt.close(fig)
+            
+            fig, ax = fcff.plot_ebit()
+            fig.set_size_inches(6, 4)
+            ebit_path = self._save_plot(fig, f"{company}_ebit.png")
+            plt.close(fig)
+            
+            fig, ax1, ax2 = fcff.plot_invested_capital_and_roic()
+            fig.set_size_inches(6, 4)  # Same size even for dual-axis plots
+            invested_capital_path = self._save_plot(fig, f"{company}_invested_capital.png")
+            plt.close(fig)
+            
+            fig, ax = fcff.plot_operating_margin()
+            fig.set_size_inches(6, 4)
+            operating_margin_path = self._save_plot(fig, f"{company}_operating_margin.png")
+            plt.close(fig)
+            
+            fig, ax = fcff.plot_stock_price()
+            fig.set_size_inches(6, 4)
+            stock_price_path = self._save_plot(fig, f"{company}_stock_price.png")
+            plt.close(fig)
+            
+            return {
+                'reinvestment': reinvestment_path,
+                'revenue': revenue_path,
+                'ebit': ebit_path,
+                'invested_capital': invested_capital_path,
+                'operating_margin': operating_margin_path,
+                'stock_price': stock_price_path
+            }
+            
+        except Exception as e:
+            # Clean up any partial files if error occurs
+            for path in plot_files.values():
+                if os.path.exists(path):
+                    os.remove(path)
+            raise
     
     def _save_plot(self, fig, filename):
-        """Save a matplotlib figure to file (always overwrites)"""
+        """Save a matplotlib figure to file with modern styling"""
         filepath = os.path.join(self.plots_dir, filename)
-        fig.savefig(filepath, bbox_inches='tight', dpi=100)
+        
+        # Apply modern styling before saving
+        fig.patch.set_facecolor('#f8f9fa')
+        for ax in fig.get_axes():
+            ax.set_facecolor('#ffffff')
+            ax.grid(color='#e9ecef', linestyle='-', linewidth=0.5)
+            ax.spines['top'].set_visible(False)
+            ax.spines['right'].set_visible(False)
+            ax.spines['bottom'].set_color('#adb5bd')
+            ax.spines['left'].set_color('#adb5bd')
+        
+        fig.savefig(filepath, bbox_inches='tight', dpi=120, facecolor=fig.get_facecolor())
         return filepath
     
     def _arrange_plots_in_grid(self, plot_files):
-        """Arrange the saved plots in the grid layout according to specifications"""
-        # Column 1: reinvestment, revenue, ebit (stacked vertically)
-        self._add_plot_to_grid(plot_files['reinvestment'], 0, 1, "Reinvestment")
-        self._add_plot_to_grid(plot_files['revenue'], 5, 1, "Revenue and Growth")
-        self._add_plot_to_grid(plot_files['ebit'], 10, 1, "EBIT")
-        
-        # Column 2: invested capital/roic and operating margin (offset vertically)
-        self._add_plot_to_grid(plot_files['invested_capital'], 2, 7, "Invested Capital and ROIC")
-        self._add_plot_to_grid(plot_files['operating_margin'], 7, 7, "Operating Margin")
-        
-        # Column 3: stock price (centered vertically)
-        self._add_plot_to_grid(plot_files['stock_price'], 5, 13, "Stock Price")
+        """Arrange the saved plots in a balanced grid layout"""
+        try:
+            # Create plot cards with consistent sizing
+            self._create_plot_card(plot_files['reinvestment'], 0, 0, "Reinvestment")
+            self._create_plot_card(plot_files['revenue'], 0, 1, "Revenue and Growth")
+            self._create_plot_card(plot_files['ebit'], 0, 2, "EBIT")
+            
+            # Make the invested capital plot span two columns
+            self._create_plot_card(plot_files['invested_capital'], 1, 0, "Invested Capital & ROIC")
+            self._create_plot_card(plot_files['stock_price'], 1, 1, "Stock Price")
+            
+            # Add operating margin below if needed
+            self._create_plot_card(plot_files['operating_margin'], 1, 2, "Operating Margin")
+            
+        except Exception as e:
+            print(f"Error arranging plots: {e}")
+            self._show_error_message(str(e))
     
-    def _add_plot_to_grid(self, filepath, row, col, title, rowspan=5):
-        """Add a saved plot image to the grid layout"""
-        canvas = MplCanvas(self, width=5, height=4)
+    def _create_plot_card(self, filepath, row, col, title, rowspan=1, colspan=1):
+        """Create a card container for a plot with proper sizing"""
+        try:
+            if not os.path.exists(filepath):
+                raise FileNotFoundError(f"Plot file not found: {filepath}")
+            
+            # Create card container
+            card = QFrame()
+            card.setStyleSheet(f"""
+                QFrame {{
+                    background-color: white;
+                    border-radius: 8px;
+                    border: 1px solid #e0e0e0;
+                }}
+            """)
+            card.setMinimumSize(400, 300)
+            
+            layout = QVBoxLayout(card)
+            layout.setContentsMargins(8, 8, 8, 8)
+            layout.setSpacing(8)
+            
+            # Title label
+            title_label = QLabel(title)
+            title_label.setFont(QFont('Segoe UI', 10, QFont.Bold))
+            title_label.setStyleSheet(f"color: {COLORS['primary']};")
+            title_label.setAlignment(Qt.AlignCenter)
+            layout.addWidget(title_label)
+            
+            # Plot container
+            plot_container = QWidget()
+            plot_container.setStyleSheet("background-color: white;")
+            plot_layout = QVBoxLayout(plot_container)
+            plot_layout.setContentsMargins(0, 0, 0, 0)
+            
+            # Create image label for the plot
+            plot_label = QLabel()
+            plot_label.setAlignment(Qt.AlignCenter)
+            plot_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+            
+            # Load and display the saved plot
+            pixmap = QPixmap(filepath)
+            if not pixmap.isNull():
+                # Scale pixmap to fit while maintaining aspect ratio
+                plot_label.setPixmap(pixmap.scaled(
+                    plot_label.size(), 
+                    Qt.KeepAspectRatio, 
+                    Qt.SmoothTransformation
+                ))
+            else:
+                raise ValueError("Could not load plot image")
+            
+            plot_layout.addWidget(plot_label)
+            layout.addWidget(plot_container, 1)
+            
+            # Add to grid with specified span
+            self.grid_layout.addWidget(card, row, col, rowspan, colspan)
+            
+            # Ensure the plot label updates on resize
+            plot_label.resizeEvent = lambda event: self._update_plot_size(plot_label, filepath)
+            
+        except Exception as e:
+            print(f"Error creating plot card: {e}")
+            error_label = QLabel(f"Could not load {title} chart")
+            error_label.setStyleSheet(f"color: {COLORS['danger']};")
+            error_label.setAlignment(Qt.AlignCenter)
+            if 'layout' in locals():
+                layout.addWidget(error_label)
+    
+    def _update_plot_size(self, label, filepath):
+        """Update plot size when container is resized"""
+        if os.path.exists(filepath):
+            pixmap = QPixmap(filepath)
+            if not pixmap.isNull():
+                label.setPixmap(pixmap.scaled(
+                    label.size(), 
+                    Qt.KeepAspectRatio, 
+                    Qt.SmoothTransformation
+                ))
+    
+    def _show_error_message(self, message):
+        """Show an error message in the grid"""
+        self._clear_grid_layout()
         
-        # Clear any existing content
-        canvas.axes.clear()
+        error_widget = QWidget()
+        error_layout = QVBoxLayout(error_widget)
         
-        # Display the saved image
-        img = plt.imread(filepath)
-        canvas.axes.imshow(img)
-        canvas.axes.axis('off')  # Hide axes
-        canvas.axes.set_title(title)
+        error_label = QLabel("Error loading historical data")
+        error_label.setFont(QFont('Segoe UI', 12, QFont.Bold))
+        error_label.setStyleSheet(f"color: {COLORS['danger']};")
+        error_label.setAlignment(Qt.AlignCenter)
+        error_layout.addWidget(error_label)
         
-        # Add to grid layout
-        self.grid_layout.addWidget(canvas, row, col, rowspan, 4)
+        detail_label = QLabel(message)
+        detail_label.setWordWrap(True)
+        detail_label.setAlignment(Qt.AlignCenter)
+        error_layout.addWidget(detail_label)
         
-        # Redraw the canvas
-        canvas.draw()
+        self.grid_layout.addWidget(error_widget, 0, 0, 1, 3)
 
 class RevenueBySegmentTab(QWidget):
     """Tab 3: Responsive Revenue by Segment with embedded Sankey diagrams"""
