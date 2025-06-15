@@ -27,28 +27,83 @@ class MplCanvas(FigureCanvas):
         self.axes = fig.add_subplot(111)
         super(MplCanvas, self).__init__(fig)
 
+from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QLabel, QComboBox, QTableWidget, 
+                            QTableWidgetItem, QPushButton, QHBoxLayout, QHeaderView,
+                            QMessageBox, QSizePolicy)
+from PyQt5.QtCore import Qt, QSize
+from PyQt5.QtGui import QFont, QColor
+from FCFF import FCFFModel
+
 class ReverseFCFFTab(QWidget):
     """Tab 1: Reverse FCFF Tool with complete valuation table"""
     def __init__(self, parent=None):
         super(ReverseFCFFTab, self).__init__(parent)
         self.parent = parent
-        self.layout = QVBoxLayout()
+        self.user_inputs = {"MSFT": None, "NVDA": None}  # Store inputs per company
+        self.current_stock = None
+        self.layout = QVBoxLayout(self)
         self.setup_ui()
         self.update_company()
+        self.calculate_fair_value()
     
     def setup_ui(self):
+        self.setup_styles()
         self.setup_header()
         self.setup_company_selection()
         self.setup_instruction_label()
         self.create_valuation_table()
         self.setup_calculate_button()
         self.setup_value_display()
-        self.setLayout(self.layout)
+    
+    def setup_styles(self):
+        self.setStyleSheet("""
+            QWidget {
+                font-family: 'Segoe UI';
+                font-size: 10pt;
+            }
+            QTableWidget {
+                border: 1px solid #d3d3d3;
+                border-radius: 4px;
+                gridline-color: #e0e0e0;
+            }
+            QTableWidget::item {
+                padding: 5px;
+            }
+            QHeaderView::section {
+                background-color: #f8f9fa;
+                padding: 5px;
+                border: none;
+                font-weight: bold;
+            }
+            QPushButton {
+                background-color: #4CAF50;
+                color: white;
+                border: none;
+                padding: 8px 16px;
+                border-radius: 4px;
+                min-height: 30px;
+            }
+            QPushButton:hover {
+                background-color: #45a049;
+            }
+            QComboBox {
+                padding: 3px;
+                border: 1px solid #d3d3d3;
+                border-radius: 4px;
+                min-height: 25px;
+            }
+            QLabel#valueDisplay {
+                background-color: #f8f9fa;
+                border-radius: 4px;
+                padding: 10px;
+            }
+        """)
     
     def setup_header(self):
         header = QLabel("Reverse FCFF Tool")
-        header.setFont(QFont('Arial', 14, QFont.Bold))
+        header.setFont(QFont('Segoe UI', 14, QFont.Bold))
         header.setAlignment(Qt.AlignCenter)
+        header.setStyleSheet("color: #2c3e50; margin-bottom: 10px;")
         self.layout.addWidget(header)
     
     def setup_company_selection(self):
@@ -65,34 +120,40 @@ class ReverseFCFFTab(QWidget):
     def setup_instruction_label(self):
         instruction = QLabel("Please enter your valuation assumptions below and click the button to calculate the fair value.")
         instruction.setWordWrap(True)
+        instruction.setStyleSheet("color: #7f8c8d; margin-bottom: 10px;")
         self.layout.addWidget(instruction)
     
     def create_valuation_table(self):
         self.table = QTableWidget()
-        self.table.setColumnCount(13)
+        self.table.setColumnCount(12)  # Base year + 10 years + terminal
         self.table.setRowCount(23)
         
-        headers = ["", "Baseyear : FY\n30.06.2024"] + \
-                 [f"{i+1}. Year (30.06.{2025+i})" for i in range(10)] + \
-                 ["Terminal Value"]
+        headers = ["Base Year"] + [f"Year {i+1}" for i in range(10)] + ["Terminal"]
         self.table.setHorizontalHeaderLabels(headers)
         
         row_labels = [
             "Revenue Growth", "Revenue", "Operating Margin", "EBIT", "Tax Rate",
             "EBT after Tax", "Reinvestment Rate", "Reinvestment", "FCFF", "WACC",
             "Discount Factor", "Discounted FCFF", "Sum of Discounted FCFF",
-            "TV-FCFF", "Terminal Value = TV-FCFF/(k-g)", "Discounted Terminal Value",
+            "TV-FCFF", "Terminal Value", "Discounted Terminal Value",
             "Total Firm Value", "Total Debt", "plus Cash", "Equity Value",
             "Shares Outstanding", "Fair Value per Share", "Return on Invested Capital"
         ]
         self.table.setVerticalHeaderLabels(row_labels)
         
+        # Configure responsive table sizing
+        self.table.setSizeAdjustPolicy(QTableWidget.AdjustToContents)
+        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
+        self.table.horizontalHeader().setStretchLastSection(True)
+        self.table.verticalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
+        
+        # Set editable cells
         editable_rows = {
-            "Revenue Growth": range(1, 13),
-            "Operating Margin": range(1, 13),
-            "Tax Rate": range(1, 13),
-            "Reinvestment Rate": range(1, 12),
-            "WACC": range(1, 13)
+            "Revenue Growth": range(0, 12),
+            "Operating Margin": range(0, 12),
+            "Tax Rate": range(0, 12),
+            "Reinvestment Rate": range(0, 11),
+            "WACC": range(0, 12)
         }
         
         for row in range(self.table.rowCount()):
@@ -103,49 +164,149 @@ class ReverseFCFFTab(QWidget):
                 
                 if row_name in editable_rows and col in editable_rows[row_name]:
                     item.setFlags(item.flags() | Qt.ItemIsEditable)
-                    item.setBackground(QColor(255, 165, 0, 50))
+                    item.setBackground(QColor(255, 229, 204))  # Light orange
                 else:
                     item.setFlags(item.flags() & ~Qt.ItemIsEditable)
                     item.setBackground(QColor(240, 240, 240))
                 
                 self.table.setItem(row, col, item)
         
-        self.table.resizeColumnsToContents()
         self.layout.addWidget(self.table)
     
     def setup_calculate_button(self):
         self.calculate_btn = QPushButton("Calculate Fair Value")
+        self.calculate_btn.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Fixed)
         self.calculate_btn.clicked.connect(self.calculate_fair_value)
-        self.layout.addWidget(self.calculate_btn)
+        
+        btn_container = QWidget()
+        btn_layout = QHBoxLayout(btn_container)
+        btn_layout.addStretch()
+        btn_layout.addWidget(self.calculate_btn)
+        btn_layout.addStretch()
+        
+        self.layout.addWidget(btn_container)
     
     def setup_value_display(self):
-        self.fair_value_label = QLabel("")
-        self.fair_value_label.setStyleSheet("font-weight: bold; color: #2077b4")
-        self.market_price_label = QLabel("")
-        self.market_price_label.setStyleSheet("font-weight: bold; color: #2077b4")
+        value_container = QWidget()
+        value_container.setObjectName("valueDisplay")
+        value_layout = QVBoxLayout(value_container)
         
-        value_layout = QHBoxLayout()
-        value_layout.addWidget(QLabel("Fair Value per Share:"))
-        value_layout.addWidget(self.fair_value_label)
-        value_layout.addWidget(QLabel("Market Price:"))
-        value_layout.addWidget(self.market_price_label)
-        value_layout.addStretch()
-        self.layout.addLayout(value_layout)
+        # Company display
+        self.company_display = QLabel()
+        self.company_display.setAlignment(Qt.AlignCenter)
+        self.company_display.setStyleSheet("""
+            font-weight: bold; 
+            font-size: 12px; 
+            color: #2c3e50;
+            margin-bottom: 8px;
+        """)
+        value_layout.addWidget(self.company_display)
+        
+        # Value display
+        value_display_layout = QHBoxLayout()
+        
+        self.fair_value_label = QLabel("Fair Value per Share: -")
+        self.fair_value_label.setStyleSheet("""
+            font-weight: bold; 
+            color: #27ae60;
+            font-size: 11pt;
+        """)
+        
+        self.market_price_label = QLabel("Market Price: -")
+        self.market_price_label.setStyleSheet("""
+            font-weight: bold; 
+            color: #e74c3c;
+            font-size: 11pt;
+        """)
+        
+        value_display_layout.addStretch()
+        value_display_layout.addWidget(self.fair_value_label)
+        value_display_layout.addSpacing(20)
+        value_display_layout.addWidget(self.market_price_label)
+        value_display_layout.addStretch()
+        
+        value_layout.addLayout(value_display_layout)
+        self.layout.addWidget(value_container)
     
     def update_company(self):
         company = self.company_combo.currentText()
         stock = "MSFT" if company == "Microsoft" else "NVDA"
+        self.current_stock = stock
         
-        self.table.horizontalHeaderItem(0).setText(f"{company} ({stock} US)")
+        # Save current inputs before switching
+        if hasattr(self, 'fcff') and self.fcff and self.current_stock:
+            self.save_current_inputs()
+        
+        self.company_display.setText(f"Current Selection: {company} ({stock})")
         self.fcff = FCFFModel(stock=stock)
         
+        # Update market price display
         market_price = self.fcff.bloomberg_data["stock_price"]
         reporting_date = self.fcff.bloomberg_data["reporting_date"]
-        self.market_price_label.setText(f"{market_price:.2f} ({reporting_date:%d.%m.%Y})")
+        self.market_price_label.setText(f"Market Price: {market_price:.4f} ({reporting_date:%d.%m.%Y})")
         
-        self.load_default_assumptions(stock)
+        # Load saved inputs or defaults
+        self.load_inputs(stock)
         self.set_base_year_values()
         self.parent.update_stock(stock)
+        self.calculate_fair_value()
+    
+    def save_current_inputs(self):
+        """Save current inputs to dictionary before switching companies"""
+        try:
+            inputs = {
+                "revenue_growth": self.parse_percentage_row("Revenue Growth", include_terminal=True),
+                "operating_margin": self.parse_percentage_row("Operating Margin", include_terminal=True),
+                "tax_rate": self.parse_percentage_row("Tax Rate", include_terminal=True),
+                "reinvestment_rate": self.parse_float_row("Reinvestment Rate"),
+                "wacc": self.parse_float_row("WACC", include_terminal=True),
+                "roic_tv": float(self.table.item(self.find_row("Return on Invested Capital"), 11).text())
+            }
+            self.user_inputs[self.current_stock] = inputs
+        except Exception as e:
+            print(f"Error saving inputs: {str(e)}")
+    
+    def load_inputs(self, stock):
+        """Load saved inputs or defaults for the selected stock"""
+        if self.user_inputs[stock] is not None:
+            # Load saved inputs
+            inputs = self.user_inputs[stock]
+            self.set_input_values(inputs)
+        else:
+            # Load default assumptions
+            self.load_default_assumptions(stock)
+    
+    def set_input_values(self, inputs):
+        """Set input values from dictionary to table"""
+        row_mapping = {
+            "revenue_growth": "Revenue Growth",
+            "operating_margin": "Operating Margin",
+            "tax_rate": "Tax Rate",
+            "reinvestment_rate": "Reinvestment Rate",
+            "wacc": "WACC"
+        }
+        
+        # Find row indices
+        row_indices = {}
+        for row in range(self.table.rowCount()):
+            row_name = self.table.verticalHeaderItem(row).text()
+            for param, label in row_mapping.items():
+                if row_name == label:
+                    row_indices[param] = row
+                    break
+        
+        # Set values from inputs
+        for param, row in row_indices.items():
+            values = inputs[param]
+            for col in range(1, len(values) + 1):  # Start from Year 1
+                if param == "reinvestment_rate" and col == 11:  # Skip terminal for reinvestment
+                    continue
+                self.table.item(row, col).setText(f"{values[col-1]:.4f}")
+        
+        # Set terminal ROIC
+        roic_row = self.find_row("Return on Invested Capital")
+        if roic_row >= 0:
+            self.table.item(roic_row, 11).setText(f"{inputs['roic_tv']:.4f}")
     
     def load_default_assumptions(self, stock):
         if stock == "NVDA":
@@ -167,145 +328,131 @@ class ReverseFCFFTab(QWidget):
                 "roic_tv": 0.2
             }
         
-        row_mapping = {
-            "revenue_growth": "Revenue Growth",
-            "operating_margin": "Operating Margin",
-            "tax_rate": "Tax Rate",
-            "reinvestment_rate": "Reinvestment Rate",
-            "wacc": "WACC"
-        }
-        
-        row_indices = {}
-        for row in range(self.table.rowCount()):
-            row_name = self.table.verticalHeaderItem(row).text()
-            for param, label in row_mapping.items():
-                if row_name == label:
-                    row_indices[param] = row
-                    break
-        
-        for param, row in row_indices.items():
-            values = defaults[param]
-            for col in range(2, len(values) + 2):
-                self.table.item(row, col).setText(f"{values[col-2]:.4f}")
-        
-        if "wacc" in row_indices:
-            self.table.item(row_indices["wacc"], 12).setText(f"{defaults['wacc'][-1]:.4f}")
-        
-        roic_row = self.find_row("Return on Invested Capital")
-        if roic_row >= 0:
-            self.table.item(roic_row, 12).setText(f"{defaults['roic_tv']:.2%}")
-        
-        if stock == "MSFT":
-            revenue_values = [245122, 281890.30, 324174, 372800, 428720, 
-                            493028, 556431, 616081, 668940, 712020, 742637, 774570]
-            revenue_row = self.find_row("Revenue")
-            for col, value in enumerate(revenue_values, 1):
-                self.table.item(revenue_row, col).setText(f"{value:,.2f}")
-            
-            ebit_values = [109435, 126851, 145878, 167760, 192924, 
-                          221863, 250394, 277236, 301023, 320409, 334187, 348557]
-            ebit_row = self.find_row("EBIT")
-            for col, value in enumerate(ebit_values, 1):
-                self.table.item(ebit_row, col).setText(f"{value:,.2f}")
-            
-            self.table.item(self.find_row("EBT after Tax"), 1).setText("89,482.00")
-            self.table.item(self.find_row("Reinvestment"), 1).setText("21,142.00")
-            self.table.item(self.find_row("FCFF"), 1).setText("82,622.00")
-            self.table.item(self.find_row("Discount Factor"), 1).setText("0.9107")
-            self.table.item(self.find_row("Discounted FCFF"), 1).setText("75,248.00")
-            self.table.item(self.find_row("Sum of Discounted FCFF"), 1).setText("944,134.00")
-            self.table.item(self.find_row("TV-FCFF"), 12).setText("223,819.00")
-            self.table.item(self.find_row("Terminal Value = TV-FCFF/(k-g)"), 12).setText("5,458,993.00")
-            self.table.item(self.find_row("Discounted Terminal Value"), 12).setText("2,227,305.00")
-            self.table.item(self.find_row("Total Firm Value"), 1).setText("3,171,439.00")
-            self.table.item(self.find_row("Total Debt"), 1).setText("97.85")
-            self.table.item(self.find_row("plus Cash"), 1).setText("75.54")
-            self.table.item(self.find_row("Equity Value"), 1).setText("3,149,130.00")
-            self.table.item(self.find_row("Shares Outstanding"), 1).setText("7,469.00")
-            self.table.item(self.find_row("Fair Value per Share"), 1).setText("421.60")
-            
-            roic_row = self.find_row("Return on Invested Capital")
-            if roic_row >= 0:
-                roic_values = [0.286, 0.309, 0.333, 0.357, 0.406, 
-                              0.426, 0.442, 0.456, 0.4626]
-                for col, value in enumerate(roic_values, 2):
-                    self.table.item(roic_row, col).setText(f"{value:.2%}")
+        self.set_input_values(defaults)
     
     def set_base_year_values(self):
+        data = self.fcff.bloomberg_data
         base_values = {
-            "Revenue": self.fcff.bloomberg_data["base_year_revenue"] / 1000,
-            "Operating Margin": self.fcff.bloomberg_data["ebit_balance"] / self.fcff.bloomberg_data["base_year_revenue"],
-            "EBIT": self.fcff.bloomberg_data["ebit_balance"] / 1000,
-            "Tax Rate": self.fcff.bloomberg_data["base_year_tax"],
-            "Total Debt": self.fcff.bloomberg_data["Total debt"] / 1000,
-            "plus Cash": self.fcff.bloomberg_data["Cash"] / 1000,
-            "Shares Outstanding": self.fcff.bloomberg_data["Shares outstanding"] / 1000
+            "Revenue": data["base_year_revenue"],
+            "Operating Margin": data["ebit_balance"] / data["base_year_revenue"],
+            "EBIT": data["ebit_balance"],
+            "Tax Rate": data["base_year_tax"],
+            "Total Debt": data["Total debt"],
+            "plus Cash": data["Cash"],
+            "Shares Outstanding": data["Shares outstanding"]
         }
         
+        # Set base year values (column 0)
         for row in range(self.table.rowCount()):
             row_name = self.table.verticalHeaderItem(row).text()
             if row_name == "Revenue":
-                self.table.item(row, 1).setText(f"{base_values['Revenue']:,.2f}")
+                self.table.item(row, 0).setText(f"{base_values['Revenue']:,.4f}")
             elif row_name == "Operating Margin":
-                self.table.item(row, 1).setText(f"{base_values['Operating Margin']:.2%}")
+                self.table.item(row, 0).setText(f"{base_values['Operating Margin']:.4f}")
             elif row_name == "EBIT":
-                self.table.item(row, 1).setText(f"{base_values['EBIT']:,.2f}")
+                self.table.item(row, 0).setText(f"{base_values['EBIT']:,.4f}")
             elif row_name == "Tax Rate":
-                self.table.item(row, 1).setText(f"{base_values['Tax Rate']:.2%}")
+                self.table.item(row, 0).setText(f"{base_values['Tax Rate']:.4f}")
             elif row_name == "Total Debt":
-                self.table.item(row, 1).setText(f"{base_values['Total Debt']:,.2f}")
+                self.table.item(row, 0).setText(f"{base_values['Total Debt']:,.4f}")
             elif row_name == "plus Cash":
-                self.table.item(row, 1).setText(f"{base_values['plus Cash']:,.2f}")
+                self.table.item(row, 0).setText(f"{base_values['plus Cash']:,.4f}")
             elif row_name == "Shares Outstanding":
-                self.table.item(row, 1).setText(f"{base_values['Shares Outstanding']:,.2f}")
+                self.table.item(row, 0).setText(f"{base_values['Shares Outstanding']:,.4f}")
     
     def calculate_fair_value(self):
         try:
-            roic_tv_item = self.table.item(self.find_row("Return on Invested Capital"), 12)
-            if not roic_tv_item or not roic_tv_item.text():
-                raise ValueError("Terminal ROIC value is missing")
+            # Save current inputs
+            self.save_current_inputs()
             
-            user_input = {
-                "revenue_growth": self.parse_percentage_row("Revenue Growth", include_terminal=True),
-                "operating_margin": self.parse_percentage_row("Operating Margin", include_terminal=True),
-                "tax_rate": self.parse_percentage_row("Tax Rate", include_terminal=True),
-                "reinvestment_rate": self.parse_float_row("Reinvestment Rate"),
-                "wacc": self.parse_float_row("WACC", include_terminal=True),
-                "roic_tv": float(roic_tv_item.text().replace('%', '')) / 100
-            }
+            # Get current inputs
+            user_input = self.user_inputs[self.current_stock]
             
-            forecast_df = self.fcff.build_forecast_df(user_inputs=user_input)[1]
+            # Run calculations
+            _, forecast_df = self.fcff.build_forecast_df(user_inputs=user_input)
             valuation = self.fcff.calculate_valuation(user_inputs=user_input)
-            roic_df = self.fcff.build_roic_df(user_inputs=user_input)[1]
+            _, roic_df = self.fcff.build_roic_df(user_inputs=user_input)
             
-            self.update_calculated_values(forecast_df, roic_df, valuation)
-            self.fair_value_label.setText(f"{valuation.loc['Fair Value per Share', 'Value']:,.2f}")
+            # Update table with results
+            self.update_table_with_results(forecast_df, valuation, roic_df, user_input)
+            
+            # Update fair value display
+            fair_value = valuation.loc['Fair Value per Share', 'Value']
+            self.fair_value_label.setText(f"Fair Value per Share: {fair_value:,.4f}")
+            
+            # Update parent
             self.parent.update_calculations(forecast_df, valuation, roic_df)
             
         except Exception as e:
-            QMessageBox.warning(self, "Input Error", f"Invalid input values: {str(e)}")
-
+            QMessageBox.warning(self, "Calculation Error", f"Error during calculation: {str(e)}")
+    
+    def update_table_with_results(self, forecast_df, valuation, roic_df, user_input):
+        # Update forecast years (columns 1-10)
+        for year in range(10):
+            year_col = year + 1
+            year_key = forecast_df.columns[year]
+            
+            # Update financial metrics
+            self.update_table_cell("Revenue", year_col, forecast_df.loc['Revenue', year_key], ",.4f")
+            self.update_table_cell("EBIT", year_col, forecast_df.loc['EBIT', year_key], ",.4f")
+            self.update_table_cell("EBT after Tax", year_col, forecast_df.loc['EBIT after Tax', year_key], ",.4f")
+            self.update_table_cell("Reinvestment", year_col, forecast_df.loc['Reinvestment', year_key], ",.4f")
+            self.update_table_cell("FCFF", year_col, forecast_df.loc['FCFF', year_key], ",.4f")
+            self.update_table_cell("Discount Factor", year_col, forecast_df.loc['Discount Factor', year_key], ".4f")
+            self.update_table_cell("Discounted FCFF", year_col, forecast_df.loc['Discounted FCFF', year_key], ",.4f")
+            
+            # Add ROIC if exists in dataframe
+            if 'Return on Invested Capital' in roic_df.index:
+                self.update_table_cell("Return on Invested Capital", year_col, 
+                                     roic_df.loc['Return on Invested Capital', year_key], ".4f")
+        
+        # Update terminal values (column 11)
+        terminal_col = 11
+        self.update_table_cell("TV-FCFF", terminal_col, valuation.loc['TV - FCFF', 'Value'], ",.4f")
+        self.update_table_cell("Terminal Value", terminal_col, valuation.loc['Terminal Value', 'Value'], ",.4f")
+        self.update_table_cell("Discounted Terminal Value", terminal_col, 
+                             valuation.loc['Discounted Terminal Value', 'Value'], ",.4f")
+        
+        # Update summary values (column 0)
+        self.update_table_cell("Sum of Discounted FCFF", 0, valuation.loc['Sum of Discounted FCFFs', 'Value'], ",.4f")
+        self.update_table_cell("Total Firm Value", 0, valuation.loc['Total Firm Value', 'Value'], ",.4f")
+        self.update_table_cell("Equity Value", 0, valuation.loc['Equity Value', 'Value'], ",.4f")
+        self.update_table_cell("Fair Value per Share", 0, valuation.loc['Fair Value per Share', 'Value'], ",.4f")
+        
+        # Update terminal ROIC
+        self.update_table_cell("Return on Invested Capital", terminal_col, user_input['roic_tv'], ".4f")
+    
+    def update_table_cell(self, row_name, col, value, format_str):
+        """Helper method to safely update table cells"""
+        row = self.find_row(row_name)
+        if row >= 0:
+            try:
+                if isinstance(value, (int, float)):
+                    self.table.item(row, col).setText(format(value, format_str).format(value))
+            except Exception as e:
+                print(f"Error updating cell {row_name}[{col}]: {str(e)}")
+    
     def parse_percentage_row(self, row_name, include_terminal=False):
         row = self.find_row(row_name)
         if row == -1:
             raise ValueError(f"Row '{row_name}' not found")
         
         values = []
-        end_col = 13 if include_terminal else 12
+        end_col = 12 if include_terminal else 11
         
-        for col in range(2, end_col):
+        for col in range(1, end_col):
             item = self.table.item(row, col)
             if not item or not item.text():
-                raise ValueError(f"Missing value in {row_name}, year {col-1}")
+                raise ValueError(f"Missing value in {row_name}, year {col}")
             
             try:
                 text = item.text().replace('%', '')
                 value = float(text)
                 if abs(value) > 1 and not text.endswith('%'):
-                    raise ValueError(f"Value too large in {row_name}, year {col-1}")
+                    value /= 100  # Convert to decimal if >1 without % sign
                 values.append(value)
             except ValueError:
-                raise ValueError(f"Invalid decimal value in {row_name}, year {col-1}")
+                raise ValueError(f"Invalid decimal value in {row_name}, year {col}")
         
         return values
 
@@ -315,19 +462,19 @@ class ReverseFCFFTab(QWidget):
             raise ValueError(f"Row '{row_name}' not found")
         
         values = []
-        end_col = 13 if include_terminal else 12
+        end_col = 12 if include_terminal else 11
         
-        for col in range(2, end_col):
+        for col in range(1, end_col):
             item = self.table.item(row, col)
             if not item or not item.text():
-                if row_name == "Reinvestment Rate" and col == 12:
-                    continue
-                raise ValueError(f"Missing value in {row_name}, year {col-1}")
+                if row_name == "Reinvestment Rate" and col == 11:
+                    continue  # Skip terminal year for reinvestment rate
+                raise ValueError(f"Missing value in {row_name}, year {col}")
             
             try:
                 values.append(float(item.text()))
             except ValueError:
-                raise ValueError(f"Invalid numeric value in {row_name}, year {col-1}")
+                raise ValueError(f"Invalid numeric value in {row_name}, year {col}")
         
         return values
 
@@ -335,74 +482,8 @@ class ReverseFCFFTab(QWidget):
         for row in range(self.table.rowCount()):
             if self.table.verticalHeaderItem(row).text().strip() == row_name.strip():
                 return row
-        return -1
-    
-    def update_calculated_values(self, forecast_df, roic_df, valuation):
-        def update_row_from_forecast(row_name, df_name=None, format_str="{:,.2f}"):
-            row = self.find_row(row_name)
-            if row == -1:
-                return
-                
-            df_name = df_name or row_name
-            if df_name in forecast_df.index:
-                for col in range(2, 12):
-                    year = f"Year {col-1}"
-                    if year in forecast_df.columns:
-                        value = forecast_df.loc[df_name, year]
-                        if isinstance(value, (int, float)):
-                            self.table.item(row, col).setText(format_str.format(value))
-        
-        update_row_from_forecast("Revenue")
-        update_row_from_forecast("EBIT")
-        update_row_from_forecast("EBT after Tax", "EBIT after Tax")
-        update_row_from_forecast("Reinvestment")
-        update_row_from_forecast("FCFF")
-        update_row_from_forecast("Discount Factor", format_str="{:.4f}")
-        update_row_from_forecast("Discounted FCFF")
-        
-        sum_row = self.find_row("Sum of Discounted FCFF")
-        if sum_row >= 0 and "Sum of Discounted FCFF" in forecast_df.index:
-            self.table.item(sum_row, 1).setText("{:,.2f}".format(forecast_df.loc["Sum of Discounted FCFF", "Value"]))
-        
-        tv_fcff_row = self.find_row("TV-FCFF")
-        terminal_value_row = self.find_row("Terminal Value = TV-FCFF/(k-g)")
-        discounted_terminal_row = self.find_row("Discounted Terminal Value")
-        
-        if all(row >= 0 for row in [tv_fcff_row, terminal_value_row, discounted_terminal_row]):
-            if "TV-FCFF" in forecast_df.index:
-                self.table.item(tv_fcff_row, 12).setText("{:,.2f}".format(forecast_df.loc["TV-FCFF", "Terminal Value"]))
-            if "Terminal Value" in forecast_df.index:
-                self.table.item(terminal_value_row, 12).setText("{:,.2f}".format(forecast_df.loc["Terminal Value", "Terminal Value"]))
-            if "Discounted Terminal Value" in forecast_df.index:
-                self.table.item(discounted_terminal_row, 12).setText("{:,.2f}".format(forecast_df.loc["Discounted Terminal Value", "Terminal Value"]))
-        
-        firm_value_row = self.find_row("Total Firm Value")
-        if firm_value_row >= 0 and "Total Firm Value" in forecast_df.index:
-            self.table.item(firm_value_row, 1).setText("{:,.2f}".format(forecast_df.loc["Total Firm Value", "Value"]))
-        
-        equity_row = self.find_row("Equity Value")
-        shares_row = self.find_row("Shares Outstanding")
-        fair_value_row = self.find_row("Fair Value per Share")
-        
-        if all(row >= 0 for row in [equity_row, shares_row, fair_value_row]):
-            if "Equity Value" in forecast_df.index:
-                self.table.item(equity_row, 1).setText("{:,.2f}".format(forecast_df.loc["Equity Value", "Value"]))
-            if "Shares Outstanding" in forecast_df.index:
-                shares = float(self.table.item(shares_row, 1).text().replace(',', ''))
-                equity_value = float(forecast_df.loc['Equity Value', 'Value'].replace(',', ''))
-                fair_value = equity_value / shares
-                self.table.item(fair_value_row, 1).setText("{:,.2f}".format(fair_value))
-        
-        roic_row = self.find_row("Return on Invested Capital")
-        if roic_row >= 0 and "ROIC" in roic_df.index:
-            for col in range(2, 12):
-                year = f"Year {col-1}"
-                if year in roic_df.columns:
-                    self.table.item(roic_row, col).setText("{:.2%}".format(roic_df.loc["ROIC", year]))
-            
-            self.table.item(roic_row, 12).setText("{:.2%}".format(roic_df.loc["Terminal ROIC", "Terminal Value"]))
+        return -1    
 
-            
 class MplCanvas(FigureCanvas):
     """Matplotlib canvas for embedding plots"""
     def __init__(self, parent=None, width=5, height=4, dpi=100):
