@@ -112,11 +112,19 @@ class ReverseFCFFTab(QWidget):
         """)
     
     def setup_header(self):
-        header = QLabel("Reverse FCFF Tool")
-        header.setFont(QFont('Segoe UI', 14, QFont.Bold))
-        header.setAlignment(Qt.AlignCenter)
-        header.setStyleSheet("color: #2c3e50; margin-bottom: 10px;")
-        self.layout.addWidget(header)
+        # Modern header with company name
+        self.header = QLabel("Reverse FCFF Tool")
+        self.header.setFont(QFont('Segoe UI', 20, QFont.Bold))
+        self.header.setAlignment(Qt.AlignCenter)
+        self.header.setStyleSheet(f"""
+            color: {COLORS['primary']};
+            padding: 12px;
+            background-color: white;
+            border-radius: 8px;
+            border: 1px solid #e0e0e0;
+            margin-bottom: 8px;
+        """)
+        self.layout.addWidget(self.header)
     
     def setup_company_selection(self):
         self.company_combo = QComboBox()
